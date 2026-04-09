@@ -99,6 +99,16 @@ def main():
     if not model_col and len(df.columns) > 0:
         model_col = df.columns[0]
 
+    # --- PIVOT PARA RESTAURAR LA MATRIZ DE BENCHMARKING DE FORMA DINÁMICA ---
+    # Si la base de datos viene en formato Vertical (Unpivoted) para que no sea estorbosa en Sheets,
+    # la convertimos de vuelta a matriz ancha (Pivoted) en memoria RAM para la gráfica.
+    if "Atributo Tecnico" in df.columns and "Valor" in df.columns and model_col:
+        try:
+            df = df.pivot_table(index=model_col, columns="Atributo Tecnico", values="Valor", aggfunc='first').reset_index()
+        except:
+            pass
+
+
     if model_col:
         df_display = df.set_index(model_col)
         df_display = df_display[df_display.index.notnull()]

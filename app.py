@@ -4,133 +4,184 @@ from thefuzz import process
 from src.modules.sheet_connector import SheetConnector
 from src.modules.normalizer import DataNormalizer
 
-# Configuración de página de alto rendimiento y tono sobrio
+# Configuración de página: Tema profesional Steren (Claro/Corporativo)
 st.set_page_config(
     page_title="Steren Intelligence Hub",
-    page_icon="⚡",
+    page_icon="🟦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilización inyectada para diseño profesional/sobrio
+# Inyección de CSS para Diseño PREMIUM STEREN
+# Tonos: Azul Corporativo (#002855), Azul Claro (#00A8E1), Fondo (#F4F6F9)
 st.markdown("""
     <style>
+    /* Tipografía moderna */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    
+    html, body, [class*="css"]  {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Fondo principal corporativo claro */
     .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
+        background-color: #F8F9FA;
+        color: #212529;
     }
-    .css-1d391kg {
-        background-color: #1E2129;
+    
+    /* Sidebar oscuro para contraste elegante */
+    [data-testid="stSidebar"] {
+        background-color: #002855 !important;
     }
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
+    }
+    
+    /* Títulos principales */
     h1, h2, h3 {
-        color: #00ADEF !important; /* Azul Steren aprox */
+        color: #002855 !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.5px;
+    }
+    
+    /* Detalles / Acentos */
+    .st-emotion-cache-10trblm {
+        color: #00A8E1 !important;
+    }
+    
+    /* Estilo de Dataframes para comparativas limpias */
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        background-color: #FFFFFF;
+    }
+    
+    /* Alerta elegante */
+    .stAlert {
+        border-radius: 8px;
+        border-left: 5px solid #00A8E1;
     }
     </style>
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
 def fetch_and_prepare_data():
-    """
-    Obtiene los datos y aplica la normalización atómica (Data Specialist cacheada).
-    """
     df_raw = SheetConnector.load_data()
-    # Asume que la columna es 'Especificaciones', ajustable según los datos reales
-    if "Especificaciones" in df_raw.columns:
-        df_clean = DataNormalizer.process_dataframe(df_raw, ["Especificaciones"])
+    if df_raw.empty:
+        return df_raw
+        
+    # Detectar columna de especificaciones dinámicamente
+    specs_col = None
+    for col in df_raw.columns:
+        if "especificacion" in col.lower() or "caracteristica" in col.lower():
+            specs_col = col
+            break
+            
+    if specs_col:
+        df_clean = DataNormalizer.process_dataframe(df_raw, [specs_col])
     else:
         df_clean = df_raw.copy()
     return df_clean
 
 def highlight_differences(row):
     """
-    Resalta (highlight) la celda entera si no todos los valores en la fila son idénticos.
-    (útil para transposición de benchmarking).
+    Resalta (highlight) la celda si las especificaciones son asimétricas (diferentes).
+    Fondo sutil azul claro de Steren para llamar la atención elegantemente.
     """
-    if len(row.unique()) > 1:
-        return ['background-color: #4A154B; color: white'] * len(row)
+    # Ignoramos filas con el nombre del modelo
+    if row.name in ["Nombre", "SKU", "MODELO", "Modelo"]:
+        return [''] * len(row)
+        
+    if len(row.dropna().unique()) > 1:
+        return ['background-color: #E6F6FD; color: #002855; font-weight: bold; border-left: 3px solid #00A8E1'] * len(row)
     return [''] * len(row)
 
 def main():
-    st.title("Steren Intelligence Hub ⚡")
-    st.markdown("Plataforma de Consulta Masiva y Referencia Técnica Pura.")
+    st.markdown("<h1>Steren <span style='color: #00A8E1;'>Intelligence Hub</span></h1>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 1.1em; color: #555;'>Herramienta matriz de cruce técnico de información corporativa.</p>", unsafe_allow_html=True)
 
-    # Carga de datos
-    with st.spinner("Sincronizando con base de datos e inyectando Data Specialist..."):
+    with st.spinner("Sincronizando con matriz de datos..."):
         df = fetch_and_prepare_data()
 
     if df.empty:
         st.warning("No se encontraron datos.")
         return
 
-    st.sidebar.header("🛡️ Especialista en Herramientas")
-    mode = st.sidebar.radio("Selecciona Modo Operativo:", 
-                            ("Consulta / Benchmarking", "Matcher Pro"))
+    st.sidebar.markdown("<h2>Herramientas</h2>", unsafe_allow_html=True)
+    mode = st.sidebar.radio("", ("📊 Benchmarking", "🎯 Matcher Pro"))
 
-    # Configuración de columnas clave
-    # Si tenemos 'SKU' lo usaremos de índice si es posible
-    if "SKU" in df.columns:
-        df_display = df.set_index("SKU")
+    # DETECCIÓN DINÁMICA DE LA COLUMNA IDENTIFICADORA
+    # Buscamos qué columna usar como título de la comparativa
+    id_candidates = ["MODELO", "Modelo", "SKU", "Nombre", "PRODUCTO", "Producto"]
+    model_col = None
+    for cand in id_candidates:
+        if cand in df.columns:
+            model_col = cand
+            break
+    
+    # Si no hay ninguna obvia, tomamos la primera columna categórica
+    if not model_col and len(df.columns) > 0:
+        model_col = df.columns[0]
+
+    # Preparamos el display poniendo al modelo como índice para que al trasponer queden arriba
+    if model_col:
+        df_display = df.set_index(model_col)
+        # Limpiar índice de nulos para no romper selectboxes
+        df_display = df_display[df_display.index.notnull()]
     else:
         df_display = df
 
-    if mode == "Consulta / Benchmarking":
-        st.header("📊 Benchmarking Mode")
-        st.write("Selecciona productos de la tabla para compararlos side-by-side.")
+    if "Benchmarking" in mode:
+        st.markdown("### 📊 Benchmarking Técnico")
+        st.write("Selecciona los SKUs o Modelos que deseas alinear para comparar sus especificaciones.")
         
-        # Filtro de selección múltiple (hasta límite visual sano)
         selected_indices = st.multiselect(
-            "Selecciona Modelos a Comparar",
-            options=df_display.index.tolist(),
-            default=df_display.index.tolist()[:3] if len(df_display) >= 3 else df_display.index.tolist()
+            "Modelos a cruzar:",
+            options=df_display.index.astype(str).tolist(),
+            default=df_display.index.astype(str).tolist()[:3] if len(df_display) >= 3 else df_display.index.astype(str).tolist()
         )
         
         if selected_indices:
-            df_filtered = df_display.loc[selected_indices]
+            # Filtrar cuidando el tipo de dato
+            df_filtered = df_display.loc[df_display.index.astype(str).isin(selected_indices)]
             
-            # Matriz transpuesta para side-by-side
+            # Matriz transpuesta
             df_transposed = df_filtered.T
             
-            # Aplicar estilo de resaltado
-            st.markdown("### Comparativa Side-by-Side")
-            st.caption("Las filas subrayadas resaltan especificaciones asimétricas entre los productos.")
+            st.markdown("<br><h5>Comparativa Visual Analítica</h5>", unsafe_allow_html=True)
+            st.caption("Las especificaciones resaltadas en azul claro indican que existen diferencias técnicas entre los productos seleccionados.")
+            
             st.dataframe(
                 df_transposed.style.apply(highlight_differences, axis=1),
                 use_container_width=True,
-                height=600
+                height=500
             )
             
-            with st.expander("Ver tabla en formato crudo sin transposición"):
+            with st.expander("Inspeccionar datos en vista original (Sin transposición)"):
                 st.dataframe(df_filtered, use_container_width=True)
 
-    elif mode == "Matcher Pro":
-        st.header("🎯 Matcher Pro")
-        st.markdown("Encuentra productos por descripciones o parámetros técnicos que pueden estar mal escritos o tener variaciones (Ej. competencia).")
+    elif "Matcher Pro" in mode:
+        st.markdown("### 🎯 Matcher Pro")
+        st.write("Inserta parámetros de búsqueda técnicos (o copia texto con ruido) para encontrar su equivalente en nuestro catálogo.")
         
-        # Opciones para buscar
-        # Juntamos texto descriptivo
-        if 'Nombre' in df.columns and 'Especificaciones' in df.columns:
-            search_corpus = (df['SKU'].astype(str) + " - " + 
-                             df['Nombre'].astype(str) + " | " + 
-                             df['Especificaciones'].astype(str)).tolist()
-        else:
-            search_corpus = df.astype(str).agg(' '.join, axis=1).tolist()
-            
-        search_query = st.text_input("Ingresa parámetros a buscar (Ej. cable tipo C rápido 5V 1A):")
+        search_corpus = df.astype(str).agg(' | '.join, axis=1).tolist()
+        search_query = st.text_input("Ingresa parámetros técnicos a buscar:")
         
         if search_query:
-            # Uso de TheFuzz
             matches = process.extract(search_query, search_corpus, limit=5)
-            
-            st.subheader("Resultados de Equivalencia (Regex + Fuzz):")
+            st.markdown("<hr>", unsafe_allow_html=True)
             for match, score in matches:
-                if score > 60:
-                    st.success(f"Coincidencia: {score}% \n\n {match}")
-                elif score > 40:
-                    st.warning(f"Coincidencia: {score}% \n\n {match}")
-                else:
-                    st.error(f"Coincidencia: {score}% \n\n {match}")
-                    
-            st.caption("El score indica la probabilidad de equivalencia evaluando parámetros normalizados.")
+                color = "#00A8E1" if score > 70 else ("#FFB81C" if score > 40 else "#C0C0C0")
+                st.markdown(f"""
+                <div style="border-left: 5px solid {color}; padding-left: 15px; margin-bottom: 20px; background-color: white; padding: 15px; border-radius: 0 8px 8px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <h4 style="margin:0; color: #002855;">Relevancia: {score}%</h4>
+                    <p style="margin-top:5px; color: #444; font-size: 0.9em;">{match}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
+
 
 if __name__ == "__main__":
     main()

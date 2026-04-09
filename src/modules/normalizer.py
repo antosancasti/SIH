@@ -26,6 +26,7 @@ class DataNormalizer:
                 
                 # Para evitar borrar todo si no parseamos nada
                 parsed_something = False
+                extra_features = []
                 
                 for attr in attributes:
                     attr_cl = attr.replace("*", "").replace("DESCRIPCIÓN TÉCNICA", "").replace("(Sitio Oficial)", "").strip()
@@ -51,6 +52,12 @@ class DataNormalizer:
                         if not val: val = "-"
                         row_dict[key] = val
                         parsed_something = True
+                    else:
+                        extra_features.append(attr_cl)
+                        
+                if extra_features:
+                    row_dict["📝 Otras Características Técnicas"] = " • " + " \n • ".join(extra_features)
+                    parsed_something = True
                 
                 if not parsed_something:
                     row_dict["Specs_Crudo"] = specs_text

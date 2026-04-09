@@ -2,29 +2,15 @@ import re
 import pandas as pd
 
 class DataNormalizer:
-    """
-    Agente: Data Specialist
-    Responsabilidad: Expandir el bloque de especificaciones en múltiples columnas para permitir
-    una verdadera matriz comparativa side-by-side.
-    """
-
     @staticmethod
     def _parse_attributes(text):
-        """
-        Extrae atributos separados por pipes (|).
-        """
         if pd.isna(text) or not isinstance(text, str):
             return []
-        
-        parts = re.split(r'\|', text)
+        parts = re.split(r'\||\n', text)
         return [p.strip() for p in parts if p.strip()]
 
     @classmethod
     def process_dataframe(cls, df, target_columns):
-        """
-        Toma la columna de especificaciones (ej: "Alimentación: 24V | Lúmenes: 650")
-        y la expande en múltiples columnas dinámicas hacia la derecha.
-        """
         df_clean = df.copy()
         
         for col in target_columns:
@@ -36,27 +22,46 @@ class DataNormalizer:
                 specs_text = row[col]
                 attributes = cls._parse_attributes(specs_text)
                 
-                # Convertimos la fila en diccionario
                 row_dict = row.to_dict()
                 
+                # Para evitar borrar todo si no parseamos nada
+                parsed_something = False
+                
                 for attr in attributes:
-                    if ":" in attr:
-                        key, val = attr.split(":", 1)
-                        # Limpiar basura publicitaria como "*** DESCRIPCIÓN TÉCNICA... *** - "
+                    attr_cl = attr.replace("*", "").replace("DESCRIPCIÓN TÉCNICA", "").replace("(Sitio Oficial)", "").strip()
+                    if attr_cl.startswith("- "):
+                        attr_cl = attr_cl[2:].strip()
+                    if attr_cl.startswith("-"):
+                        attr_cl = attr_cl[1:].strip()
+                    
+                    if not attr_cl:
+                        continue
+                        
+                    if ":" in attr_cl:
+                        key, val = attr_cl.split(":", 1)
                         if " - " in key:
                             key = key.split(" - ")[-1]
                         
-                        key = key.replace("*", "").replace("DESCRIPCIÓN TÉCNICA", "").replace("(Sitio Oficial)", "").strip()
+                        key = key.strip()
                         if not key:
-                            key = "Atributo"
+                            key = "Atributo genérico"
                             
-                        row_dict[key] = val.strip()
+                        val = val.strip()
+                        # Normalizar valores vacios a un guion
+                        if not val: val = "-"
+                        row_dict[key] = val
+                        parsed_something = True
+                    else:
+                        # Para caracteristicas sin dos puntos (ej: "Soporta hasta 3 kg")
+                        row_dict[attr_cl] = "SÍ / INCLUIDO"
+                        parsed_something = True
                 
+                if not parsed_something:
+                    row_dict["Specs_Crudo"] = specs_text
+                        
                 expanded_rows.append(row_dict)
                 
-            # Sobreescribimos el dataframe con las nuevas columnas expandidas
             df_clean = pd.DataFrame(expanded_rows)
-            # Removemos la columna gigante original para dejar limpio el comparador
             df_clean = df_clean.drop(columns=[col])
             
         return df_clean

@@ -42,69 +42,87 @@ class DataNormalizer:
     def _parse_attributes(text):
         if pd.isna(text) or not isinstance(text, str):
             return []
+        
+        # Separar primero por saltos de línea y tuberías
         parts = re.split(r'\||\n', text)
-        return [p.strip() for p in parts if p.strip()]
+        
+        final_parts = []
+        for p in parts:
+            p = p.strip()
+            if not p: continue
+            
+            # Sub-separar por guiones intermedios que fungen como separadores de lista
+            # ej "100 pulgadas - Fácil de limpiar - Rápido"
+            subparts = re.split(r'\s+-\s+', p)
+            final_parts.extend(subparts)
+            
+        return [p.strip() for p in final_parts if p.strip()]
 
     @classmethod
     def process_dataframe(cls, df, target_columns):
-        df_clean = df.copy()
+        expanded_tuples = []
+        headers_to_keep = [col for col in df.columns if col not in target_columns]
         
         for col in target_columns:
-            if col not in df_clean.columns: continue
+            if col not in df.columns: continue
                 
-            expanded_rows = []
-            for index, row in df_clean.iterrows():
+            for index, row in df.iterrows():
                 specs_text = row[col]
                 attributes = cls._parse_attributes(specs_text)
-                row_dict = row.to_dict()
                 
+                base_dict = {h: row[h] for h in headers_to_keep}
                 parsed_something = False
                 extra_features = []
                 
+                def emit_row(atributo, valor):
+                    new_row = base_dict.copy()
+                    new_row["Atributo Tecnico"] = str(atributo)
+                    new_row["Valor"] = str(valor)
+                    expanded_tuples.append(new_row)
+                
                 for attr in attributes:
                     attr_cl = attr.replace("*", "").replace("DESCRIPCIÓN TÉCNICA", "").replace("(Sitio Oficial)", "").strip()
-                    attr_cl = re.sub(r'^-+\s*', '', attr_cl) # Eliminar guiones iniciales
+                    attr_cl = re.sub(r'^-+\s*', '', attr_cl)
                     
                     if not attr_cl:
                         continue
                         
-                    # Extraer pares Clave: Valor
-                    if ":" in attr_cl:
-                        key, val = attr_cl.split(":", 1)
+                    match = re.match(r'^([^:]+):\s+(.*)$', attr_cl)
+                    if match:
+                        key = match.group(1)
+                        val = match.group(2)
                         if " - " in key:
                             key = key.split(" - ")[-1]
                         
-                        # Limpiar Clave
                         key = cls._limpiar_acentos(key.strip().title())
-                        
-                        if not key or len(key) > 50: # Evitar falsos positivos como parrafos largos con dos puntos
+                        if not key or len(key) > 60:
                             extra_features.append(attr_cl)
                             continue
                             
-                        # Limpiar Valor y estandarizar
                         val = cls._estandarizar_unidades(val)
                         if not val: val = "-"
                         
-                        row_dict[key] = val
+                        emit_row(key, val)
                         parsed_something = True
                     else:
-                        if len(attr_cl) > 3: # Ignorar caracteres sueltos
-                            extra_features.append(attr_cl)
+                        if len(attr_cl) > 3:
+                            key_booleana = cls._limpiar_acentos(attr_cl.strip().title())
+                            if len(key_booleana) < 60:
+                                emit_row(key_booleana, "Sí")
+                                parsed_something = True
+                            else:
+                                extra_features.append(attr_cl)
                         
                 if extra_features:
-                    # Las notas miscelaneas se unen
-                    row_dict["Otras Caracteristicas Adicionales"] = " \n> ".join(extra_features)
+                    emit_row("Otras Caracteristicas Adicionales", " \n> ".join(extra_features))
                     parsed_something = True
                 
                 if not parsed_something:
-                    row_dict["Specs_Crudo"] = specs_text
+                     if pd.isna(specs_text) or str(specs_text).strip() == "":
+                         emit_row("Revisión", "Falta información técnica oficial")
+                     else:
+                         emit_row("Info Cruda", specs_text)
                         
-                expanded_rows.append(row_dict)
-                
-            df_clean = pd.DataFrame(expanded_rows)
-            # Ya no eliminamos la columna cruda para comparar pero podemos ocultarla
-            # df_clean = df_clean.drop(columns=[col]) 
-            
-        # Limpieza de duplicados o columnas basuras
+        df_clean = pd.DataFrame(expanded_tuples)
         df_clean = df_clean.loc[:, ~df_clean.columns.str.contains('^Unnamed')]
         return df_clean

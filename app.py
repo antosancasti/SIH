@@ -1,11 +1,9 @@
-# VERSION: 3 - Cache Invalidation
+# VERSION: 4 - ETL Preprocessed Data Fetching
 import streamlit as st
 import pandas as pd
 from thefuzz import process
 from src.modules.sheet_connector import SheetConnector
-from src.modules.normalizer import DataNormalizer
 
-# Configuración de página: Tema profesional Steren (Claro/Corporativo)
 st.set_page_config(
     page_title="Steren Intelligence Hub",
     page_icon="🟦",
@@ -13,7 +11,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inyección de CSS para Diseño PREMIUM STEREN
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -59,27 +56,11 @@ st.markdown("""
 
 @st.cache_data(ttl=600)
 def fetch_and_prepare_data():
-    df_raw = SheetConnector.load_data()
-    if df_raw.empty:
-        return df_raw
-    
-    # 1. Quitar espacios accidentales en los nombres de las columnas (ej: "MODELO " a "MODELO")
-    df_raw.columns = df_raw.columns.astype(str).str.strip()
-        
-    # 2. Detectar columna de especificaciones dinámicamente
-    specs_col = None
-    for col in df_raw.columns:
-        if "especificacion" in col.lower() or "caracteristica" in col.lower():
-            specs_col = col
-            break
-            
-    # 3. La magia del Normalizador (Desglosar la cadena gigante en múltiples columnas reales)
-    if specs_col:
-        df_clean = DataNormalizer.process_dataframe(df_raw, [specs_col])
-    else:
-        df_clean = df_raw.copy()
-        
-    return df_clean
+    # En esta versión 4, ya NO parseamos aquí. El Master ETL Agent 
+    # ya hizo el trabajo duro de normalizar y limpiar con Regex.
+    # Así ahorramos miles de ms en el Frontend web.
+    df = SheetConnector.load_clean_data()
+    return df
 
 def highlight_differences(row):
     """
@@ -89,7 +70,6 @@ def highlight_differences(row):
     if row.name in ["Nombre", "SKU", "MODELO", "Modelo", "PRODUCTO"]:
         return [''] * len(row)
         
-    # Eliminamos nulos/vacíos para ver si realmente hay una diferencia
     unique_vals = [str(x).strip() for x in row.dropna().unique() if str(x).strip() != '']
     if len(unique_vals) > 1:
         return ['background-color: #E6F6FD; color: #002855; font-weight: bold; border-left: 3px solid #00A8E1'] * len(row)
@@ -97,19 +77,18 @@ def highlight_differences(row):
 
 def main():
     st.markdown("<h1>Steren <span style='color: #00A8E1;'>Intelligence Hub</span></h1>", unsafe_allow_html=True)
-    st.markdown("<p style='font-size: 1.1em; color: #555;'>Herramienta matriz de cruce técnico de información corporativa.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 1.1em; color: #555;'>Herramienta matriz de cruce técnico de información corporativa (Datos ETL Pre-procesados).</p>", unsafe_allow_html=True)
 
-    with st.spinner("Sincronizando con matriz de datos..."):
+    with st.spinner("Sincronizando con base de datos maestra STEREN_CLEAN_DB..."):
         df = fetch_and_prepare_data()
 
     if df.empty:
-        st.warning("No se encontraron datos.")
+        st.warning("La base de datos está vacía. Por favor corre el flujo del Master Agent (tools/master_agent.py).")
         return
 
     st.sidebar.markdown("<h2>Herramientas</h2>", unsafe_allow_html=True)
     mode = st.sidebar.radio("", ("📊 Benchmarking", "🎯 Matcher Pro"), key="main_sidebar_mode")
 
-    # DETECCIÓN DINÁMICA DE LA COLUMNA IDENTIFICADORA (El Nombre del Modelo)
     id_candidates = ["MODELO", "Modelo", "SKU", "Nombre", "PRODUCTO", "Producto"]
     model_col = None
     for cand in id_candidates:
@@ -120,21 +99,20 @@ def main():
     if not model_col and len(df.columns) > 0:
         model_col = df.columns[0]
 
-    # Asignar el índice y descartar filas completamente vacías en el modelo
     if model_col:
         df_display = df.set_index(model_col)
-        # Limpiar filas donde el modelo esté en blanco (NaN o string vacío)
         df_display = df_display[df_display.index.notnull()]
         df_display = df_display[df_display.index != ""]
+        df_display = df_display[~df_display.index.duplicated(keep='first')]
+        df_display = df_display.loc[:, ~df_display.columns.duplicated(keep='first')]
     else:
         df_display = df
 
     if "Benchmarking" in mode:
         st.markdown("### 📊 Benchmarking Técnico")
-        st.write("Selecciona los SKUs o Modelos que deseas alinear para comparar sus especificaciones lado a lado.")
+        st.write("Selecciona los modelos a comparar. **Nota:** Estos datos han sido estandarizados automáticamente por IA (Normalización de Unidades + NLP).")
         
         all_models = df_display.index.astype(str).tolist()
-        # Escoger predeterminadamente los primeros 3 (o menos)
         default_selection = all_models[:3] if len(all_models) >= 3 else all_models
         
         selected_indices = st.multiselect(
@@ -144,15 +122,12 @@ def main():
         )
         
         if selected_indices:
-            # Filtrar por los modelos exactos
             df_filtered = df_display.loc[df_display.index.astype(str).isin(selected_indices)]
-            
-            # MATRIZ TRANSPUESTA
-            # Al hacer .T, nuestras columnas recién creadas por el normalizador se vuelven las filas perfectas
             df_transposed = df_filtered.T
-            
-            # Quitar filas que solo digan NaN o None en todo para los modelos seleccionados
             df_transposed = df_transposed.dropna(how='all')
+            
+            # Limpiar filas donde todos sean '-' o vacíos
+            df_transposed = df_transposed[~df_transposed.apply(lambda row: all(str(val).strip() in ['-', '', 'nan'] for val in row), axis=1)]
             
             st.markdown("<br><h5>Comparativa Visual Analítica</h5>", unsafe_allow_html=True)
             st.caption("Las especificaciones resaltadas en azul claro indican que existen diferencias técnicas entre los productos.")
@@ -163,14 +138,14 @@ def main():
                 height=700
             )
             
-            with st.expander("Inspeccionar datos en crudo (Base de Datos)"):
+            with st.expander("Inspeccionar datos en crudo (Matriz Limpia)"):
                 st.dataframe(df_filtered, use_container_width=True)
         else:
             st.info("👈 Por favor, selecciona al menos un modelo en la caja superior para iniciar la comparativa.")
 
     elif "Matcher Pro" in mode:
         st.markdown("### 🎯 Matcher Pro")
-        st.write("Inserta parámetros de búsqueda técnicos (o copia texto con ruido) para localizar productos.")
+        st.write("Búsqueda Fuzzy sobre el corpus de descripciones técnicas procesadas.")
         
         search_corpus = df.astype(str).agg(' | '.join, axis=1).tolist()
         search_query = st.text_input("Ingresa parámetros técnicos a buscar:")

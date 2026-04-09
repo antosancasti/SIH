@@ -50,10 +50,20 @@ class SheetConnector:
             client = gspread.authorize(creds)
             
             sheet_url = st.secrets["sheet_settings"]["spreadsheet_url"]
-            sheet = client.open_by_url(sheet_url).sheet1
+            spreadsheet = client.open_by_url(sheet_url)
             
-            data = sheet.get_all_records()
-            return pd.DataFrame(data)
+            all_records = []
+            for ws in spreadsheet.worksheets():
+                try:
+                    # Traer datos solo si la hoja tiene contenido
+                    records = ws.get_all_records()
+                    if records:
+                        all_records.extend(records)
+                except Exception:
+                    # Ignorar hojas vacías o sin formato tabular
+                    continue
+                    
+            return pd.DataFrame(all_records)
         except Exception as e:
             st.error(f"Error al conectar con Google Sheets: {str(e)}")
             st.info("Asegúrate de que la Service Account tenga permisos de Lector en el Google Sheet.")

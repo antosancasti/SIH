@@ -60,25 +60,19 @@ class DataNormalizer:
 
     @classmethod
     def process_dataframe(cls, df, target_columns):
-        expanded_tuples = []
-        headers_to_keep = [col for col in df.columns if col not in target_columns]
+        df_clean = df.copy()
         
         for col in target_columns:
-            if col not in df.columns: continue
+            if col not in df_clean.columns: continue
                 
-            for index, row in df.iterrows():
+            expanded_rows = []
+            for index, row in df_clean.iterrows():
                 specs_text = row[col]
                 attributes = cls._parse_attributes(specs_text)
+                row_dict = row.to_dict()
                 
-                base_dict = {h: row[h] for h in headers_to_keep}
                 parsed_something = False
                 extra_features = []
-                
-                def emit_row(atributo, valor):
-                    new_row = base_dict.copy()
-                    new_row["Atributo Tecnico"] = str(atributo)
-                    new_row["Valor"] = str(valor)
-                    expanded_tuples.append(new_row)
                 
                 for attr in attributes:
                     attr_cl = attr.replace("*", "").replace("DESCRIPCIÓN TÉCNICA", "").replace("(Sitio Oficial)", "").strip()
@@ -102,27 +96,30 @@ class DataNormalizer:
                         val = cls._estandarizar_unidades(val)
                         if not val: val = "-"
                         
-                        emit_row(key, val)
+                        row_dict[key] = val
                         parsed_something = True
                     else:
                         if len(attr_cl) > 3:
                             key_booleana = cls._limpiar_acentos(attr_cl.strip().title())
                             if len(key_booleana) < 60:
-                                emit_row(key_booleana, "Sí")
+                                row_dict[key_booleana] = "Sí"
                                 parsed_something = True
                             else:
                                 extra_features.append(attr_cl)
                         
                 if extra_features:
-                    emit_row("Otras Caracteristicas Adicionales", " \n> ".join(extra_features))
+                    row_dict["Otras Caracteristicas Adicionales"] = " \n> ".join(extra_features)
                     parsed_something = True
                 
                 if not parsed_something:
                      if pd.isna(specs_text) or str(specs_text).strip() == "":
-                         emit_row("Revisión", "Falta información técnica oficial")
+                         row_dict["Revisión"] = "Falta información técnica oficial"
                      else:
-                         emit_row("Info Cruda", specs_text)
+                         row_dict["Info Cruda"] = specs_text
                         
-        df_clean = pd.DataFrame(expanded_tuples)
+                expanded_rows.append(row_dict)
+                
+            df_clean = pd.DataFrame(expanded_rows)
+            
         df_clean = df_clean.loc[:, ~df_clean.columns.str.contains('^Unnamed')]
         return df_clean

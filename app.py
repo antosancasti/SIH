@@ -159,7 +159,7 @@ def main():
             
             st.dataframe(
                 df_transposed.style.apply(highlight_differences, axis=1),
-                use_container_width=True,
+                use_container_width=False,
                 height=700
             )
             

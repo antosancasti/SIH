@@ -44,16 +44,12 @@ class DataNormalizer:
                         
                         key = key.strip()
                         if not key:
-                            key = "Atributo genérico"
+                            continue
                             
                         val = val.strip()
                         # Normalizar valores vacios a un guion
                         if not val: val = "-"
                         row_dict[key] = val
-                        parsed_something = True
-                    else:
-                        # Para caracteristicas sin dos puntos (ej: "Soporta hasta 3 kg")
-                        row_dict[attr_cl] = "SÍ / INCLUIDO"
                         parsed_something = True
                 
                 if not parsed_something:
